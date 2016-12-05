@@ -1,13 +1,18 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module XMonad.MTU.Focus
   ( activateFocus
   , deactivateFocus
-  , focusEventHook )
+  , focusEventHook
+  , adjustEventInput )
   where
 
+import XMonad
 import XMonad.Core
+import Data.Monoid
 import qualified XMonad.Util.ExtensibleState as XS
 
-data FocusWindow = FocusWindow Window | NoFocus
+data FocusWindow = FocusWindow Window | NoFocus deriving (Typeable,Read,Show)
 
 instance ExtensionClass FocusWindow where
   initialValue = NoFocus
@@ -19,13 +24,21 @@ activateFocus = XS.put . FocusWindow
 deactivateFocus = XS.put NoFocus
 
 -- Handles mouse events to unfocused windows.
-focusEventHook e@(MotionEvent _ _ _ _ x y w) = do
-  -- Get focused window on mouse event, start drifting towards focus window.
+focusEventHook (CrossingEvent { ev_window = w }) = do
   focus <- XS.get
   case focus of
-    FocusWindow fw -> case fw != w of
-      True ->  
-      False -> 
+    FocusWindow fw -> case fw /= w of
+      True -> withDisplay $ \d -> liftIO (warpPointer d 0 fw 0 0 0 0 offset offset)
+        where offset = 15
+      False -> return ()
     NoFocus -> return ()
-  return ()
-focusEventHook _ = return ()
+  return (All True)
+focusEventHook _ = return (All True)
+
+-- Pick up pointer movements.
+adjustEventInput :: X ()
+adjustEventInput = withDisplay $ \dpy -> do
+  rootw <- asks theRoot
+  io $ selectInput dpy rootw $  substructureRedirectMask .|. substructureNotifyMask
+                                .|. enterWindowMask .|. leaveWindowMask .|. structureNotifyMask
+                                .|. buttonPressMask .|. pointerMotionMask
